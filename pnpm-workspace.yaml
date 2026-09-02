@@ -1,0 +1,12 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Install scripts are denied by default and each exception is recorded here.
+# This mirrors the sandbox's own `npm ci --ignore-scripts` posture: a package
+# postinstall runs with network access and full user privileges, which is
+# exactly the thing Phase 3 exists to prevent for untrusted code.
+allowBuilds:
+  esbuild: true          # ships a platform binary; tsx and vitest both need it
+  "@google/genai": false # postinstall is not required for the SDK to work
+  protobufjs: false      # ditto

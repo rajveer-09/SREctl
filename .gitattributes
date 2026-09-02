@@ -1,0 +1,12 @@
+# Normalise line endings in the repository.
+#
+# This matters beyond tidiness here: the sandbox's dependency cache is keyed on
+# a hash of package-lock.json, so a checkout that flips CRLF/LF changes the key
+# and misses the cache on every run without changing a single dependency.
+* text=auto eol=lf
+
+# Binary
+*.png binary
+*.jpg binary
+*.gz  binary
+*.pdf binary

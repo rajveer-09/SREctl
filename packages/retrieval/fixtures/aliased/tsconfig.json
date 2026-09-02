@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "baseUrl": ".",
+    "paths": { "@lib/*": ["src/lib/*"] },
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"]
+}

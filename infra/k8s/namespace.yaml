@@ -1,0 +1,19 @@
+# One namespace, two phases distinguished by pod label.
+#
+# PVCs are namespaced, so a dependency volume filled by the prep phase cannot
+# be mounted by an exec pod in a different namespace. Rather than duplicate the
+# volume, both phases live here and NetworkPolicy separates them by label -
+# which works because policies are ADDITIVE: a connection is allowed if any
+# policy permits it, so a deny-all over every pod plus an egress allow that
+# selects only prep pods leaves exec pods with no egress at all.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: srectl-sandbox
+  labels:
+    # Enforced by the API server, not by our Job builder remembering to set
+    # the fields: non-root, no privilege escalation, all capabilities dropped.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

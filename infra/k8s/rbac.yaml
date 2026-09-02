@@ -1,0 +1,46 @@
+# The orchestrator's in-cluster identity.
+#
+# It lives inside the cluster (Phase 6 makes it a Deployment) so it gets a
+# ServiceAccount and in-cluster config for free, instead of needing VPC egress
+# plumbing to reach a private control plane from Cloud Run.
+#
+# Scoped to Jobs and their pods in two namespaces. It cannot touch Deployments,
+# Secrets, or anything in kube-system.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: srectl-orchestrator
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: srectl-job-runner
+  namespace: srectl-sandbox
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "get", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["create", "get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: srectl-job-runner
+  namespace: srectl-sandbox
+subjects:
+  - kind: ServiceAccount
+    name: srectl-orchestrator
+    namespace: default
+roleRef:
+  kind: Role
+  name: srectl-job-runner
+  apiGroup: rbac.authorization.k8s.io

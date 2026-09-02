@@ -1,0 +1,53 @@
+# Default deny for every pod in the namespace.
+#
+# An empty podSelector selects all pods. With both policy types listed and no
+# rules, nothing enters and nothing leaves - including DNS, deliberately. A pod
+# that can resolve names can exfiltrate through them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+  namespace: srectl-sandbox
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# The prep phase only. No untrusted code runs in these pods: `npm ci` is run
+# with --ignore-scripts precisely so no package postinstall executes while
+# this egress is open.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prep-egress
+  namespace: srectl-sandbox
+spec:
+  podSelector:
+    matchLabels:
+      srectl/phase: prep
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              # No reaching back into the cluster or the node network.
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 80 }

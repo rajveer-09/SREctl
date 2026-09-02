@@ -1,0 +1,82 @@
+# =============================================================================
+# Secrets — never commit
+# =============================================================================
+# The pattern is broad on purpose: .env.local, .env.production and per-app
+# copies (apps/dashboard/.env.local) all resolve to real credentials.
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+gha-creds-*.json
+service-account*.json
+
+# =============================================================================
+# Dependencies
+# =============================================================================
+node_modules/
+.pnpm-store/
+
+# =============================================================================
+# Build output and caches
+# =============================================================================
+dist/
+build/
+out/
+.next/
+.turbo/
+.vercel/
+*.tsbuildinfo
+
+# =============================================================================
+# Generated at runtime
+# =============================================================================
+# Local event store, queue, delivery dedupe log, and the model cooldown cache.
+.data/
+
+# Written by `pnpm build:runner`: the content-addressed image tag for the
+# current wrapper. Regenerated on every build, machine-specific.
+.runner-image
+
+# Coverage and mutation artifacts.
+coverage/
+.stryker-tmp/
+reports/
+.srectl-results.json
+
+# =============================================================================
+# Evaluation results
+# =============================================================================
+# Measurements, not source. They are produced by `pnpm eval:chaos` and
+# `pnpm testgen` against one machine and one quota, so committing them would
+# publish numbers nobody can reproduce from this repo alone. The harness that
+# produces them IS tracked (eval/chaos/*.ts).
+eval/results/
+
+# =============================================================================
+# Documentation
+# =============================================================================
+# Kept on disk, out of the repo. The architecture spec and the phase-by-phase
+# build plan are working documents with local setup steps in them; the code and
+# its comments are what the repository ships.
+docs/
+
+# =============================================================================
+# Editor and OS
+# =============================================================================
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+.vscode/*
+!.vscode/extensions.json
+
+# =============================================================================
+# Logs and scratch
+# =============================================================================
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.smoke-server.log
+.data-smoke/
