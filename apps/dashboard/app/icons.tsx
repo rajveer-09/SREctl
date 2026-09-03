@@ -57,7 +57,12 @@ export const IconCost = () => (
   </svg>
 );
 
-/** The product mark: a bracketed cursor. Terminal-adjacent, not a terminal. */
+/**
+ * The product mark: a bracketed cursor. Terminal-adjacent, not a terminal.
+ *
+ * The brackets are drawn at a lower opacity than the cursor so the mark keeps
+ * a focal point at 22px instead of reading as an even tangle of strokes.
+ */
 export const IconMark = () => (
   <svg viewBox="0 0 18 18" fill="none" aria-hidden="true" className="glyph">
     <path
@@ -66,7 +71,8 @@ export const IconMark = () => (
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
+      opacity="0.62"
     />
-    <rect x="7.6" y="7.6" width="2.8" height="2.8" rx="0.6" fill="currentColor" />
+    <rect x="7.5" y="7.5" width="3" height="3" rx="0.7" fill="currentColor" />
   </svg>
 );

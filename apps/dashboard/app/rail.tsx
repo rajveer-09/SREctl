@@ -60,8 +60,10 @@ export default function Rail() {
         <span className="status">
           <span className={`beacon ${status === "open" ? "on" : status === "error" ? "err" : ""}`} />
           {status === "open" ? "streaming" : status === "error" ? "reconnecting" : "connecting"}
+          {/* Count sits on the same row rather than below it: two stacked lines
+              of small grey text read as a paragraph, not as a status. */}
+          <span className="n">{count}</span>
         </span>
-        <span>{count} live event{count === 1 ? "" : "s"}</span>
       </div>
     </aside>
   );

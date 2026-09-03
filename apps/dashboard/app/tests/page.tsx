@@ -156,7 +156,7 @@ export default async function Page() {
                           {a.outcome}
                         </Tag>
                       </td>
-                      <td className="mono" style={{ color: "var(--dim)" }}>
+                      <td className="mono dim">
                         {a.usage.model ?? "—"}
                       </td>
                       <td className="num">{compact(a.usage.totalTokens)}</td>

@@ -66,7 +66,7 @@ export default async function Page() {
                 </>
               }
             >
-              <div className="pad" style={{ display: "flex", gap: 6, flexWrap: "wrap", borderBottom: "1px solid var(--line)" }}>
+              <div className="pad tierstrip">
                 {["diff", "structural", "semantic", "conventions"].map((tier) =>
                   perTier.has(tier) ? (
                     <Tag key={tier} tone={tier as "diff"} solid>
@@ -74,7 +74,7 @@ export default async function Page() {
                     </Tag>
                   ) : null,
                 )}
-                <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--dim)" }}>
+                <span className="timing">
                   structural {trace.structuralMs}ms · semantic {trace.semanticMs}ms
                 </span>
               </div>
@@ -83,9 +83,8 @@ export default async function Page() {
                 {trace.items.map((item, i) => (
                   <div className="tr" key={`${trace.id}-${i}`}>
                     <Tag tone={item.tier as "diff"}>{item.tier}</Tag>
-                    <span>
+                    <span className="cell">
                       <span className="path">{item.path}</span>
-                      <br />
                       <span className="why">{item.reason}</span>
                     </span>
                     {/* Weight, not just a count: which file is eating the
@@ -98,7 +97,7 @@ export default async function Page() {
                         }}
                       />
                     </span>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11, textAlign: "right", color: "var(--dim)" }}>
+                    <span className="tok">
                       {item.tokens}
                     </span>
                   </div>
@@ -107,13 +106,12 @@ export default async function Page() {
                 {trace.dropped.map((d, i) => (
                   <div className="tr dropped" key={`${trace.id}-d-${i}`}>
                     <Tag tone="warn">dropped</Tag>
-                    <span>
+                    <span className="cell">
                       <span className="path">{d.path}</span>
-                      <br />
                       <span className="why">excluded by the token budget</span>
                     </span>
                     <span className="weight" />
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11, textAlign: "right", color: "var(--dim)" }}>
+                    <span className="tok">
                       {d.tokens}
                     </span>
                   </div>
@@ -124,7 +122,7 @@ export default async function Page() {
         })}
 
         {traces.length > 0 ? (
-          <p className="lede" style={{ fontSize: 12 }}>
+          <p className="lede footnote">
             {structuralHits} file{structuralHits === 1 ? "" : "s"} across these traces were included
             solely because of an import edge.
           </p>

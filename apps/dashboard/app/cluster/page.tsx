@@ -95,7 +95,7 @@ export default async function Page() {
                         </Tag>
                       </td>
                       <td className="num">{incident.restartCount}</td>
-                      <td className="note" style={unresolved ? { color: "var(--dim)" } : undefined}>
+                      <td className={`note${unresolved ? " dim" : ""}`}>
                         {t?.topCause ?? "—"}
                       </td>
                       <td>

@@ -108,7 +108,7 @@ export default async function Page() {
         </div>
 
         {byModel.has("unrecorded") ? (
-          <p className="lede" style={{ fontSize: 12 }}>
+          <p className="lede footnote">
             Calls marked <b>unrecorded</b> predate model attribution. Their tokens are counted, but
             they cannot be attributed to a model, so per-model rates should be read as a lower bound.
           </p>
