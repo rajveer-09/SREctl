@@ -36,6 +36,22 @@ $SRECTL = @{
   DeadLetterTopic = "srectl-jobs-dead"
 
   ServiceAccount  = "srectl-orchestrator"
+
+  # Workload Identity Federation for GitHub Actions. The pool and provider are
+  # global rather than regional - Google places them at locations/global and
+  # rejects any other location.
+  WifPool          = "github"
+  WifProvider      = "github-actions"
+  DeployAccount    = "srectl-deployer"
+
+  # The repository allowed to mint credentials against the provider above.
+  # Anything else presenting a GitHub OIDC token is rejected at the provider,
+  # before IAM is consulted.
+  GitHubRepo       = Get-EnvOr "SRECTL_GITHUB_REPO" "rajveer-09/SREctl"
+}
+
+function Get-DeployAccountEmail {
+  return ($SRECTL.DeployAccount + "@" + $SRECTL.Project + ".iam.gserviceaccount.com")
 }
 
 function Get-ArtifactHost {

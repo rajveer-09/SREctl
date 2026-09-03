@@ -1,0 +1,281 @@
+name: deploy
+
+# Builds and deploys SREctl to Google Cloud.
+#
+# Authentication is Workload Identity Federation: GitHub mints an OIDC token
+# for this run, Google exchanges it for a credential that lives minutes and is
+# bound to this repository. No service-account JSON key exists anywhere, so
+# there is none to leak, rotate, or find in a fork.
+#
+# Set up once with `infra/gcp/wif-setup.ps1`, which prints the two repository
+# variables this file reads.
+#
+# The local equivalent is infra/gcp/deploy.ps1. That script targets Windows
+# PowerShell and uses backslash paths, so it is not invoked here; the steps
+# below perform the same sequence natively on Linux.
+
+on:
+  push:
+    branches: [main]
+    # Documentation cannot change what is deployed, and a deploy that only
+    # rebuilds identical images still restarts the orchestrator.
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "LICENSE"
+      - ".gitignore"
+  workflow_dispatch:
+
+# Two deploys racing would push two tags and leave whichever finished last in
+# charge, which is not necessarily the newer commit. Queue instead - and never
+# cancel one mid-flight, because a cancelled run can leave Cloud Run updated
+# and the cluster not.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # The load-bearing permission. Without id-token: write there is no OIDC token
+  # to exchange, and the auth step fails with a message about missing
+  # credentials that does not mention this line.
+  id-token: write
+
+env:
+  PROJECT_ID: srectl
+  REGION: asia-south1
+  ARTIFACT_REPO: srectl
+  CLUSTER: srectl
+  TOPIC: srectl-jobs
+  SUBSCRIPTION: srectl-jobs-orchestrator
+  INGEST_SERVICE: srectl-ingest
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Gate before anything is pushed. Deploying a build that fails its own
+      # tests is worse than not deploying: the failure then has to be found in
+      # production, against an image already serving traffic.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Bundle apps
+        run: pnpm build:apps
+
+      # --- authenticate ---------------------------------------------------
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Fail early if the repository variables are unset
+        # Without this the run proceeds and fails several minutes later inside
+        # a gcloud call, with an error about an empty resource name rather than
+        # a missing variable.
+        #
+        # Values reach the script through env rather than expression
+        # interpolation. Interpolation splices the value into the shell source
+        # before bash parses it, so a value containing shell syntax would run
+        # as code; an environment variable is only ever data. These are
+        # admin-set identifiers, but the safe form costs nothing.
+        env:
+          WIF_PROVIDER: ${{ vars.WIF_PROVIDER }}
+          DEPLOY_SA: ${{ vars.DEPLOY_SA }}
+          TARGET_REPO: ${{ vars.TARGET_REPO }}
+        run: |
+          missing=0
+          for v in WIF_PROVIDER DEPLOY_SA TARGET_REPO; do
+            if [ -z "${!v}" ]; then
+              echo "::error::repository variable $v is not set. Run infra/gcp/wif-setup.ps1 and add it."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      # --- image tags ------------------------------------------------------
+      - name: Compute image tags
+        id: tags
+        run: |
+          registry="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}"
+
+          # App images are tagged by commit: it is the only identifier that
+          # ties a running revision back to the source that produced it.
+          echo "ingest=${registry}/srectl-ingest:${GITHUB_SHA::12}"             >> "$GITHUB_OUTPUT"
+          echo "orchestrator=${registry}/srectl-orchestrator:${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+          # The runner image is content-addressed instead, by the same hash
+          # scripts/push-runner.ts uses: sha256 of the Dockerfile plus the
+          # wrapper, first 12 hex. A commit tag would rebuild and redeploy the
+          # sandbox image on every unrelated push, and `minikube image load`
+          # was already observed to no-op on an unchanged tag while the cluster
+          # kept running stale code. Recomputing here means .runner-image -
+          # which is gitignored and absent in CI - is not needed.
+          runner_hash=$(cat infra/docker/runner.Dockerfile packages/sandbox/src/wrapper/run.mjs \
+            | sha256sum | cut -c1-12)
+          echo "runner=${registry}/srectl-runner:${runner_hash}" >> "$GITHUB_OUTPUT"
+
+      # --- build and push ---------------------------------------------------
+      - name: Build and push ingest
+        env:
+          IMAGE: ${{ steps.tags.outputs.ingest }}
+        run: |
+          docker build -t "$IMAGE" -f infra/docker/ingest.Dockerfile .
+          docker push "$IMAGE"
+
+      - name: Build and push orchestrator
+        env:
+          IMAGE: ${{ steps.tags.outputs.orchestrator }}
+        run: |
+          docker build -t "$IMAGE" -f infra/docker/orchestrator.Dockerfile .
+          docker push "$IMAGE"
+
+      - name: Build and push sandbox runner
+        # Skipped when the content hash already exists in the registry, since
+        # an identical image under an identical tag is the one case where a
+        # rebuild genuinely achieves nothing.
+        env:
+          IMAGE: ${{ steps.tags.outputs.runner }}
+        run: |
+          if gcloud artifacts docker images describe "$IMAGE" >/dev/null 2>&1; then
+            echo "runner image already published: $IMAGE"
+          else
+            docker build -t "$IMAGE" -f infra/docker/runner.Dockerfile .
+            docker push "$IMAGE"
+          fi
+
+      # --- Cloud Run --------------------------------------------------------
+      - name: Deploy ingest to Cloud Run
+        # DATA_DIR=/tmp because a Cloud Run filesystem is read-only apart from
+        # /tmp, and the delivery-ID dedupe log has to be writable.
+        env:
+          TARGET_REPO: ${{ vars.TARGET_REPO }}
+          INGEST_IMAGE: ${{ steps.tags.outputs.ingest }}
+        run: |
+          gcloud run deploy "$INGEST_SERVICE" \
+            --image="$INGEST_IMAGE" \
+            --region="$REGION" \
+            --platform=managed \
+            --allow-unauthenticated \
+            --service-account="srectl-ingest@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT_ID},SRECTL_PUBSUB_TOPIC=${TOPIC},TARGET_REPO=${TARGET_REPO},DATA_DIR=/tmp,LOG_LEVEL=info" \
+            --min-instances=0 \
+            --max-instances=3 \
+            --cpu=1 \
+            --memory=512Mi \
+            --timeout=60s \
+            --quiet
+
+      - name: Verify ingest is serving
+        # A successful `run deploy` means the revision started, not that it
+        # answers. Health is served on /health because Google's frontend
+        # intercepts the literal path /healthz on *.run.app and never forwards
+        # it - a probe there reports a healthy service as down.
+        run: |
+          url=$(gcloud run services describe "$INGEST_SERVICE" --region="$REGION" --format="value(status.url)")
+          echo "ingest: $url"
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$url/health" || true)
+            [ "$code" = "200" ] && echo "healthy" && exit 0
+            sleep 3
+          done
+          echo "::error::$url/health did not return 200"
+          exit 1
+
+      # --- GKE --------------------------------------------------------------
+      - name: Get cluster credentials
+        # This action installs gke-gcloud-auth-plugin, which kubectl requires
+        # and which is not on the runner by default.
+        uses: google-github-actions/get-gke-credentials@v3
+        with:
+          cluster_name: ${{ env.CLUSTER }}
+          location: ${{ env.REGION }}
+
+      - name: Deploy orchestrator
+        env:
+          TARGET_REPO: ${{ vars.TARGET_REPO }}
+          ORCHESTRATOR_IMAGE: ${{ steps.tags.outputs.orchestrator }}
+          RUNNER_IMAGE: ${{ steps.tags.outputs.runner }}
+        run: |
+          manifest=$(mktemp)
+          # ORCHESTRATOR_IMAGE_PLACEHOLDER is deliberately not named
+          # IMAGE_PLACEHOLDER: that name is a SUBSTRING of
+          # RUNNER_IMAGE_PLACEHOLDER, so substituting it first also rewrote the
+          # runner token and silently set SRECTL_RUNNER_IMAGE to the
+          # orchestrator image. No token below is a substring of another.
+          sed -e "s|ORCHESTRATOR_IMAGE_PLACEHOLDER|${ORCHESTRATOR_IMAGE}|g" \
+              -e "s|RUNNER_IMAGE_PLACEHOLDER|${RUNNER_IMAGE}|g" \
+              -e "s|PROJECT_PLACEHOLDER|${PROJECT_ID}|g" \
+              -e "s|SUBSCRIPTION_PLACEHOLDER|${SUBSCRIPTION}|g" \
+              -e "s|TOPIC_PLACEHOLDER|${TOPIC}|g" \
+              -e "s|REPO_PLACEHOLDER|${TARGET_REPO}|g" \
+              infra/k8s/gke/orchestrator.yaml > "$manifest"
+
+          # A placeholder surviving substitution would be applied verbatim and
+          # the pod would fail to pull an image literally named
+          # "ORCHESTRATOR_IMAGE_PLACEHOLDER".
+          if grep -q "PLACEHOLDER" "$manifest"; then
+            echo "::error::unsubstituted placeholder in the manifest:"
+            grep -n "PLACEHOLDER" "$manifest"
+            exit 1
+          fi
+
+          # Grepping for a leftover "PLACEHOLDER" does not cover the substring
+          # bug described above: that consumed the token and left no trace of
+          # the word, so this check passed while the value was wrong. Assert
+          # that both images actually made it into the manifest.
+          for expected in "$ORCHESTRATOR_IMAGE" "$RUNNER_IMAGE"; do
+            if ! grep -qF "$expected" "$manifest"; then
+              echo "::error::manifest does not carry $expected after substitution"
+              exit 1
+            fi
+          done
+
+          kubectl apply -f "$manifest"
+          kubectl rollout status deployment/srectl-orchestrator --timeout=180s
+
+      - name: Summary
+        if: always()
+        env:
+          INGEST_IMAGE: ${{ steps.tags.outputs.ingest }}
+          ORCHESTRATOR_IMAGE: ${{ steps.tags.outputs.orchestrator }}
+          RUNNER_IMAGE: ${{ steps.tags.outputs.runner }}
+        run: |
+          {
+            echo "### SREctl deploy"
+            echo ""
+            echo "| component | image |"
+            echo "|---|---|"
+            echo "| ingest | \`${INGEST_IMAGE}\` |"
+            echo "| orchestrator | \`${ORCHESTRATOR_IMAGE}\` |"
+            echo "| sandbox runner | \`${RUNNER_IMAGE}\` |"
+            echo ""
+            echo "Authenticated via Workload Identity Federation. No service-account key was used."
+          } >> "$GITHUB_STEP_SUMMARY"

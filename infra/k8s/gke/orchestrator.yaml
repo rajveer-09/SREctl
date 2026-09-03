@@ -33,7 +33,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: orchestrator
-          image: IMAGE_PLACEHOLDER
+          image: ORCHESTRATOR_IMAGE_PLACEHOLDER
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

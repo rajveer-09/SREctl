@@ -99,12 +99,27 @@ try {
   # --- Orchestrator on GKE ---------------------------------------------------
   Write-Step "Deploying orchestrator to GKE"
   $manifest = Get-Content "$PSScriptRoot\..\k8s\gke\orchestrator.yaml" -Raw
-  $manifest = $manifest.Replace("IMAGE_PLACEHOLDER", $orchImage)
+  # ORCHESTRATOR_IMAGE_PLACEHOLDER, not IMAGE_PLACEHOLDER: the latter is a
+  # SUBSTRING of RUNNER_IMAGE_PLACEHOLDER, so replacing it first rewrote the
+  # runner token too and SRECTL_RUNNER_IMAGE became "RUNNER_<orchestrator
+  # image>". Nothing caught it because the sandbox is only reached by testgen,
+  # and a review never creates a Job.
+  $manifest = $manifest.Replace("ORCHESTRATOR_IMAGE_PLACEHOLDER", $orchImage)
   $manifest = $manifest.Replace("PROJECT_PLACEHOLDER", $project)
   $manifest = $manifest.Replace("SUBSCRIPTION_PLACEHOLDER", $SRECTL.Subscription)
   $manifest = $manifest.Replace("TOPIC_PLACEHOLDER", $SRECTL.Topic)
   $manifest = $manifest.Replace("REPO_PLACEHOLDER", $env:TARGET_REPO)
   $manifest = $manifest.Replace("RUNNER_IMAGE_PLACEHOLDER", (Get-Content "$repoRoot\.runner-image" -Raw).Trim())
+
+  # Checking for a leftover "PLACEHOLDER" is not enough on its own: the bug
+  # above consumed the token and left no trace of the word. Assert the value.
+  $runnerImage = (Get-Content "$repoRoot\.runner-image" -Raw).Trim()
+  if ($manifest -notmatch [regex]::Escape($runnerImage)) {
+    throw "manifest does not carry the runner image '$runnerImage' - substitution is wrong"
+  }
+  if ($manifest -match "PLACEHOLDER") {
+    throw "manifest still contains a placeholder after substitution"
+  }
 
   $tmp = New-TemporaryFile
   Set-Content -Path $tmp.FullName -Value $manifest -Encoding utf8
