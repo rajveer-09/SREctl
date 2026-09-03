@@ -7,6 +7,7 @@
   "dependencies": {
     "@hono/node-server": "^1.19.5",
     "@srectl/core": "workspace:*",
-    "hono": "^4.9.10"
+    "hono": "^4.9.10",
+    "pg": "^8.23.0"
   }
 }

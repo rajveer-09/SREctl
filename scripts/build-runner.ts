@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawnTool } from "./lib/spawn-tool.js";
 
 /**
  * Builds the runner image with a content-addressed tag and loads it into
@@ -28,22 +28,13 @@ for (const path of INPUTS) {
 const tag = `srectl-runner:${hash.digest("hex").slice(0, 12)}`;
 
 console.log(`building ${tag}`);
-await run("docker", ["build", "-q", "-t", tag, "-f", "infra/docker/runner.Dockerfile", "."]);
+await spawnTool("docker", ["build", "-q", "-t", tag, "-f", "infra/docker/runner.Dockerfile", "."]);
 
 const minikubePath = process.env.MINIKUBE_PATH ?? "C:\\Program Files\\Kubernetes\\Minikube\\minikube.exe";
 console.log(`loading ${tag} into minikube`);
-await run(minikubePath, ["image", "load", tag]);
+await spawnTool(minikubePath, ["image", "load", tag]);
 
 // Written where every runner reads it, so nothing has to be told the tag.
 await writeFile(".runner-image", tag + "\n", "utf8");
 console.log(`\n${tag}\nwrote .runner-image — set SRECTL_RUNNER_IMAGE from it, or let the runners read it.`);
 
-function run(command: string, args: string[]): Promise<void> {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { shell: false, stdio: ["ignore", "inherit", "inherit"] });
-    child.on("error", reject);
-    child.on("close", (code) =>
-      code === 0 ? resolvePromise() : reject(new Error(`${command} exited ${code}`)),
-    );
-  });
-}

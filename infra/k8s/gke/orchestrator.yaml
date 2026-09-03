@@ -1,0 +1,65 @@
+# The orchestrator, in-cluster.
+#
+# Placed here rather than on Cloud Run deliberately: it creates and watches
+# sandbox Jobs, so it needs the Kubernetes API. In-cluster it gets a
+# ServiceAccount and in-cluster config for free; from Cloud Run it would need
+# Direct VPC egress, a connector, and extra IAM bindings to reach a private
+# control plane - a lot of networking surface for no benefit.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: srectl-orchestrator
+  namespace: default
+  labels: { app: srectl-orchestrator }
+spec:
+  # Exactly one. Concurrency is bounded by the model's requests-per-minute, not
+  # by CPU, so a second replica would rate-limit the first into a fallback
+  # chain and make every run slower AND worse.
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: srectl-orchestrator }
+  template:
+    metadata:
+      labels: { app: srectl-orchestrator }
+    spec:
+      # Bound to the Google service account by Workload Identity, so
+      # credentials come from the metadata server. No key file exists to leak.
+      serviceAccountName: srectl-orchestrator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: orchestrator
+          image: IMAGE_PLACEHOLDER
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          env:
+            - { name: GOOGLE_CLOUD_PROJECT,        value: "PROJECT_PLACEHOLDER" }
+            - { name: SRECTL_PUBSUB_SUBSCRIPTION,  value: "SUBSCRIPTION_PLACEHOLDER" }
+            - { name: SRECTL_PUBSUB_TOPIC,         value: "TOPIC_PLACEHOLDER" }
+            - { name: TARGET_REPO,                 value: "REPO_PLACEHOLDER" }
+            # The sandbox Jobs it creates pull this image from Artifact Registry.
+            - { name: SRECTL_RUNNER_IMAGE,         value: "RUNNER_IMAGE_PLACEHOLDER" }
+            - { name: LOG_LEVEL,                   value: "info" }
+            # Without this the worker reviews every pull request and throws the
+            # result away, which is indistinguishable from working in the logs.
+            - { name: SRECTL_POST,                 value: "true" }
+            - { name: DATA_DIR,                    value: "/tmp" }
+            # Ingest verified the HMAC before publishing; the orchestrator
+            # never sees a raw webhook, so this is a placeholder that only
+            # satisfies the config schema.
+            - { name: GITHUB_WEBHOOK_SECRET,       value: "unused-by-the-orchestrator-0000" }
+          resources:
+            requests: { cpu: "500m", memory: "1Gi" }
+            limits:   { cpu: "1",    memory: "1Gi" }
+          volumeMounts:
+            - { name: tmp,  mountPath: /tmp }
+            - { name: home, mountPath: /home/app }
+      volumes:
+        - { name: tmp,  emptyDir: {} }
+        - { name: home, emptyDir: {} }

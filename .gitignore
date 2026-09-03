@@ -80,3 +80,4 @@ npm-debug.log*
 pnpm-debug.log*
 .smoke-server.log
 .data-smoke/
+dist/

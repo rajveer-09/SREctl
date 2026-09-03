@@ -120,8 +120,24 @@ const checks: Check[] = [
   {
     name: "memory-limit",
     guarantee: "OOMKilled at the configured ceiling",
-    command: NODE("const a=[];for(;;)a.push(new Array(1e6).fill(7))"),
-    budget: { ...BUDGETS.test, memoryMb: 256, timeoutSeconds: 90 },
+    /**
+     * Buffers, not JS arrays, and that distinction is the whole check.
+     *
+     * Two things conspire here. GKE Autopilot enforces a resource floor and
+     * SILENTLY REWRITES a limit below it - a requested 256Mi arrives as a
+     * 512Mi cgroup. And Node sizes its heap from that cgroup, landing at
+     * ~259MB, which is BELOW the real limit. So a JS array loop exhausts V8
+     * first and exits 1 with "JavaScript heap out of memory" while the kernel
+     * OOM killer never fires, and the check reports "not enforced" for a limit
+     * that is working perfectly.
+     *
+     * Buffer memory is external to the V8 heap, so it counts against the
+     * cgroup without hitting the heap ceiling, and the kill is a real OOM.
+     */
+    command: NODE(
+      "const b=[];for(;;){b.push(Buffer.allocUnsafe(64*1024*1024).fill(1));}",
+    ),
+    budget: { ...BUDGETS.test, memoryMb: 512, timeoutSeconds: 120 },
     // Kubernetes reports this on the container status directly, so there is no
     // guessing from exit codes that a self-limiting runtime never produces.
     verdict: (r) => r.oomKilled,

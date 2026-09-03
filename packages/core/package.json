@@ -10,6 +10,8 @@
   "dependencies": {
     "pg": "^8.23.0",
     "zod": "^4.5.4",
-    "dotenv": "^17.2.1"
+    "dotenv": "^17.2.1",
+    "@google-cloud/pubsub": "^6.0.1",
+    "@google-cloud/secret-manager": "^7.0.0"
   }
 }

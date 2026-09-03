@@ -1,6 +1,6 @@
 import type { V1Job, V1PersistentVolumeClaim } from "@kubernetes/client-node";
 import type { Budget } from "./runner.js";
-import { runnerImage } from "./image.js";
+import { imagePullPolicy, runnerImage } from "./image.js";
 
 export const SANDBOX_NS = "srectl-sandbox";
 
@@ -11,6 +11,7 @@ export const SANDBOX_NS = "srectl-sandbox";
  */
 export const PREP_NS = SANDBOX_NS;
 const IMAGE = runnerImage();
+const PULL_POLICY = imagePullPolicy(IMAGE);
 const UID = 10001;
 
 /**
@@ -123,7 +124,7 @@ export function prepJob(opts: {
             {
               name: "prep",
               image: IMAGE,
-              imagePullPolicy: "Never",
+              imagePullPolicy: PULL_POLICY,
               securityContext: CONTAINER_SECURITY,
               command: ["sh", "-c", script],
               env: ENV,
@@ -185,7 +186,7 @@ export function execJob(opts: {
             {
               name: "exec",
               image: IMAGE,
-              imagePullPolicy: "Never",
+              imagePullPolicy: PULL_POLICY,
               securityContext: CONTAINER_SECURITY,
               args: opts.command,
               env: [

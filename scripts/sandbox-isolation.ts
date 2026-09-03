@@ -80,7 +80,9 @@ const checks: Check[] = [
   {
     name: "memory-limit",
     guarantee: "OOM kill at the configured ceiling",
-    command: ["node", "-e", "const a=[];for(;;)a.push(new Array(1e6).fill(7))"],
+    // Off-heap, so the cgroup limit is reached before V8's own heap ceiling.
+    // See the Kubernetes suite for why that distinction matters.
+    command: ["node", "-e", "const b=[];for(;;){b.push(Buffer.allocUnsafe(64*1024*1024).fill(1));}"],
     budget: { ...BUDGETS.test, memoryMb: 256, timeoutSeconds: 60 },
     verdict: (r) => r.oomKilled || r.exitCode === 137,
   },

@@ -24,6 +24,12 @@ const EnvSchema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   /** Overrides the default model. Each model has its own free-tier quota. */
   GEMINI_MODEL: z.string().optional(),
+
+  // Set only when deployed. Their presence is what selects cloud behaviour,
+  // so a local run needs no flags and a deployed one needs no code change.
+  SRECTL_PUBSUB_TOPIC: z.string().optional(),
+  SRECTL_PUBSUB_SUBSCRIPTION: z.string().optional(),
+  GOOGLE_CLOUD_PROJECT: z.string().optional(),
   GITHUB_TOKEN: z.string().optional(),
   TARGET_REPO: z.string().optional(),
 });

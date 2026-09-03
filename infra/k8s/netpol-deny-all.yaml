@@ -29,6 +29,14 @@ spec:
   policyTypes:
     - Egress
   egress:
+    # DNS, two ways, because clusters resolve differently.
+    #
+    # Minikube sends queries straight to the kube-dns ClusterIP, which this
+    # selector covers. GKE Autopilot runs NodeLocal DNSCache, so pods query a
+    # LINK-LOCAL address on the node instead - and 169.254.0.0/16 was in the
+    # except list below, so every lookup was dropped. The symptom was not a DNS
+    # error: `npm ci` simply hung until the job hit its 600s deadline, which
+    # reads like a slow registry rather than a policy problem.
     - to:
         - namespaceSelector:
             matchLabels:
@@ -36,6 +44,12 @@ spec:
           podSelector:
             matchLabels:
               k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 169.254.20.10/32
       ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }

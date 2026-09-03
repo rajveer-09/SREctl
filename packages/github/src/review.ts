@@ -16,6 +16,11 @@ export interface PostReviewOptions {
   comments: ReviewComment[];
   budget: ActionBudget;
   dryRun?: boolean;
+  /**
+   * Skip posting when this commit already carries an SREctl review.
+   * On by default; pass false only to deliberately post a second one.
+   */
+  skipIfAlreadyReviewed?: boolean;
 }
 
 export interface PostReviewResult {
@@ -24,7 +29,16 @@ export interface PostReviewResult {
   url?: string;
   inlineComments: number;
   demotedToSummary: number;
+  /** A review for this exact commit was already there, so nothing was posted. */
+  alreadyReviewed?: boolean;
 }
+
+/**
+ * Footer on every review we post, and the marker used to recognise our own
+ * work on a later pass. It has to stay in the posted body for the duplicate
+ * check to keep working.
+ */
+export const REVIEW_MARKER = "<sub>Posted by SREctl.";
 
 /**
  * Posts one review with inline comments anchored to diff hunks.
@@ -65,6 +79,35 @@ export async function postReview(opts: PostReviewOptions): Promise<PostReviewRes
 
   if (opts.dryRun) {
     return { posted: false, inlineComments: anchorable.length, demotedToSummary: orphaned.length };
+  }
+
+  /**
+   * Pub/Sub is at-least-once, so the same review job can arrive twice - a pod
+   * restart mid-review is enough. Ingest deduplicates on the GitHub delivery
+   * ID, but that is upstream of the message already in flight, so it cannot
+   * help here. Without this check the second delivery posts a second review on
+   * the same commit, which is what happened on the first cloud run.
+   */
+  if (opts.skipIfAlreadyReviewed !== false) {
+    opts.budget.spend("list pull request reviews");
+    const existing = await gh.paginate(gh.rest.pulls.listReviews, {
+      ...ref,
+      pull_number: pullNumber,
+      per_page: 100,
+    });
+    const mine = existing.find(
+      (r) => r.commit_id === commitId && (r.body ?? "").includes(REVIEW_MARKER),
+    );
+    if (mine) {
+      return {
+        posted: false,
+        alreadyReviewed: true,
+        reviewId: mine.id,
+        url: mine.html_url,
+        inlineComments: anchorable.length,
+        demotedToSummary: orphaned.length,
+      };
+    }
   }
 
   opts.budget.spend("create pull request review");

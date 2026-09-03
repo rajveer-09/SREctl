@@ -6,3 +6,6 @@ export * from "./pg-event-store.js";
 export * from "./queue.js";
 export * from "./dedupe.js";
 export * from "./emitter.js";
+export * from "./pg-queue.js";
+export * from "./pubsub-queue.js";
+export * from "./secrets.js";

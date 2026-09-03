@@ -1,0 +1,14 @@
+{
+  "name": "@srectl/orchestrator",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/worker.ts",
+  "dependencies": {
+    "@srectl/agents": "workspace:*",
+    "@srectl/core": "workspace:*",
+    "@srectl/github": "workspace:*",
+    "@srectl/retrieval": "workspace:*",
+    "pg": "^8.23.0"
+  }
+}

@@ -1,6 +1,30 @@
+# Build context exclusions.
+#
+# Secrets first: an image layer is readable by anyone who can pull it, and a
+# .env baked into one cannot be un-published.
+.env
+.env.*
+!.env.example
+
 node_modules
 .git
+.github
+
+# Local state and measurements: never part of an image.
 .data
-dist
 coverage
-.env
+.stryker-tmp
+reports
+eval/results
+docs
+*.log
+
+# The runner image needs no build output. The ingest and orchestrator images
+# are built FROM dist/, so those two are let back in explicitly - a blanket
+# `dist` exclusion made their COPY fail with "/dist/ingest: not found".
+dist
+!dist/ingest
+!dist/orchestrator
+
+# Next.js output is large and irrelevant to these images.
+apps/dashboard/.next
