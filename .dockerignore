@@ -2,11 +2,24 @@
 #
 # Secrets first: an image layer is readable by anyone who can pull it, and a
 # .env baked into one cannot be un-published.
+#
+# NOTE THE `**/` PREFIXES. Docker matches these patterns against the whole
+# relative path, not against each segment the way .gitignore does, so a bare
+# `.env.*` excludes ./.env.local and NOT apps/dashboard/.env.local. That
+# distinction was not academic: the dashboard image was built with
+# apps/dashboard/.env.local inside it, carrying a GitHub token, the Gemini key
+# and the database URL.
 .env
 .env.*
+**/.env
+**/.env.*
 !.env.example
 
+# Same rule for node_modules: without `**/`, a workspace package's
+# node_modules is copied into the image, and pnpm's symlinks point at absolute
+# host paths that do not exist in a container.
 node_modules
+**/node_modules
 .git
 .github
 
@@ -26,5 +39,10 @@ dist
 !dist/ingest
 !dist/orchestrator
 
-# Next.js output is large and irrelevant to these images.
+# Next.js output is large, host-specific, and rebuilt inside the dashboard
+# image anyway.
 apps/dashboard/.next
+**/.next
+
+# Incremental compiler state. Harmless but pure noise in a layer.
+**/*.tsbuildinfo
