@@ -7,14 +7,18 @@ and watches the same cluster for failing workloads.
 
 TypeScript, Google ADK, Kubernetes.
 
-**[Live dashboard](https://srectl-dashboard-zacvpiwawq-el.a.run.app)** ·
-**[Target repository](https://github.com/rajveer-09/srectl-target)** — the
-repository the agent reviews, where its pull requests and reviews are public ·
-**[This repository](https://github.com/rajveer-09/SREctl)**
+| | |
+| :-- | :-- |
+| **[Live dashboard &rarr;](https://srectl-dashboard-zacvpiwawq-el.a.run.app)** | Read-only console on Cloud Run, reading the live event store |
+| **[Target repository &rarr;](https://github.com/rajveer-09/srectl-target)** | The repository the agent reviews. Its reviews, findings and generated-test pull requests are public |
+| **[Source](https://github.com/rajveer-09/SREctl)** | This repository |
 
-The dashboard is read-only and reads the live event store. The target repository
-holds the agent's actual output: reviews it posted on pull requests, and test
-pull requests it opened after generating, executing and mutation-scoring a test.
+## What it looks like
+
+A finding the agent posted on a real pull request, anchored to the diff line it
+concerns, with its confidence stated.
+
+![A review comment the agent posted on a pull request](assets/screenshots/review-comment.png)
 
 ## What it does differently
 
@@ -64,6 +68,11 @@ flowchart LR
 Ingest answers GitHub inside its ~10s delivery timeout and does no agent work.
 The orchestrator runs in-cluster, where a review taking minutes is not a
 problem, and creates sandbox Jobs for anything that executes untrusted code.
+
+Both HTTP services scale to zero, so an idle deployment costs nothing and the
+only hourly charge is the cluster, which is torn down between sessions.
+
+![Cloud Run — ingest and dashboard deployed in asia-south1](assets/screenshots/cloud-run.png)
 
 ## Demo
 
