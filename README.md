@@ -7,6 +7,64 @@ and watches the same cluster for failing workloads.
 
 TypeScript, Google ADK, Kubernetes.
 
+**[Live dashboard](https://srectl-dashboard-zacvpiwawq-el.a.run.app)** ·
+**[Target repository](https://github.com/rajveer-09/srectl-target)** — the
+repository the agent reviews, where its pull requests and reviews are public ·
+**[This repository](https://github.com/rajveer-09/SREctl)**
+
+The dashboard is read-only and reads the live event store. The target repository
+holds the agent's actual output: reviews it posted on pull requests, and test
+pull requests it opened after generating, executing and mutation-scoring a test.
+
+## What it does differently
+
+- **Nothing is proposed that has not been executed.** A generated test that has
+  not run is a guess, so tests are run in a sandbox and mutation-scored before a
+  pull request exists.
+- **Repository content is untrusted input.** Diffs and file contents are wrapped
+  in nonce-delimited blocks, never followed as instructions, and the write path
+  allowlist is computed in code before any model runs.
+- **Failures are counted.** An upstream model outage is recorded as an outage,
+  not as a test that failed or a review that found nothing.
+- **No autonomous writes.** The agent opens pull requests and files findings;
+  humans merge.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  GH["GitHub<br/>pull_request · push"]
+
+  subgraph CR["Cloud Run"]
+    ING["ingest<br/>HMAC verify · dedupe · enqueue"]
+    DASH["dashboard<br/>Next.js console"]
+  end
+
+  PS["Pub/Sub<br/>srectl-jobs<br/>dead-letter after 5"]
+
+  subgraph GKE["GKE Autopilot"]
+    ORCH["orchestrator<br/>claims one job at a time"]
+    SB["sandbox Job<br/>no egress · non-root · read-only root"]
+  end
+
+  PG[("Postgres<br/>events · pgvector")]
+  GEM["Gemini<br/>model chain with fallback"]
+
+  GH -- "webhook" --> ING
+  ING -- "publish" --> PS
+  PS -- "pull" --> ORCH
+  ORCH -- "retrieval + review" --> GEM
+  ORCH -- "creates" --> SB
+  ORCH -- "posts review / opens PR" --> GH
+  ING -- "events" --> PG
+  ORCH -- "events" --> PG
+  PG -- "SSE" --> DASH
+```
+
+Ingest answers GitHub inside its ~10s delivery timeout and does no agent work.
+The orchestrator runs in-cluster, where a review taking minutes is not a
+problem, and creates sandbox Jobs for anything that executes untrusted code.
+
 ## Demo
 
 The console reads the event store directly. Every figure below was produced by

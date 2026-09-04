@@ -22,6 +22,11 @@ on:
     paths-ignore:
       - "docs/**"
       - "**/*.md"
+      # Screenshots are documentation. Without this, adding five PNGs to the
+      # README ran the whole pipeline - install, typecheck, 208 tests, three
+      # image builds, a Cloud Run deploy and a GKE rollout - to ship an
+      # identical application.
+      - "assets/**"
       - "LICENSE"
       - ".gitignore"
   workflow_dispatch:
