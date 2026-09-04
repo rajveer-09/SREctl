@@ -7,6 +7,52 @@ and watches the same cluster for failing workloads.
 
 TypeScript, Google ADK, Kubernetes.
 
+## Demo
+
+The console reads the event store directly. Every figure below was produced by
+the pipelines running, not seeded — including the failures.
+
+### Activity
+
+Every action the agents took, streamed over SSE as it happened.
+
+![Activity — live event stream](assets/screenshots/activity.png)
+
+### Retrieval
+
+Why each file entered the context bundle. Structural neighbours come from a real
+import graph, which is how a caller three directories away gets found —
+embedding similarity would not surface it, because it shares no vocabulary with
+the change.
+
+![Retrieval — per-file provenance by tier](assets/screenshots/retrieval.png)
+
+### Test funnel
+
+A generated test that has not been executed is a guess. Nothing reaches a pull
+request without running in the sandbox and clearing the mutation threshold. Runs
+lost to a model outage are excluded from the funnel rather than counted as
+quality failures — an upstream 429 is not a test that failed.
+
+![Test funnel — generated through proposed, with outages excluded](assets/screenshots/test-funnel.png)
+
+### Cluster
+
+The agent hypothesizes; it does not diagnose. Every row is a likely cause with
+cited evidence and a confidence level, and the rules answer first so the model
+is only asked about genuinely ambiguous signals.
+
+![Cluster — incidents and ranked hypotheses](assets/screenshots/cluster.png)
+
+### Spend
+
+Thinking tokens are counted explicitly, because they are billed and never appear
+in the output. Usage is split by the model that actually served each call, since
+automatic fallback means one run can be served by a different model than the one
+requested.
+
+![Spend — tokens by subsystem and serving model](assets/screenshots/spend.png)
+
 ## Layout
 
 ```
