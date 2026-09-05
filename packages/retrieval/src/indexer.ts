@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { Logger } from "@srectl/core";
 import type pg from "pg";
 import { chunkFile, embeddingText, type Chunk } from "./chunker.js";
 import { toVectorLiteral } from "./db.js";
 import type { Embedder } from "./embed.js";
-import { buildImportGraph, openProject } from "./import-graph.js";
+import { buildImportGraph } from "./import-graph.js";
+import { loadRepo, localSource, type RepoSource } from "./source.js";
 
 export interface IndexStats {
   repo: string;
@@ -23,12 +22,44 @@ export interface IndexStats {
 
 export interface IndexOptions {
   repo: string;
+  /** Used by the default local source, and as the project root for it. */
   repoRoot: string;
+  /**
+   * Where to read the repository from. Defaults to the checkout at repoRoot.
+   * The orchestrator passes a GitHub-backed source, because it runs in a
+   * container with no checkout.
+   */
+  source?: RepoSource;
   pool: pg.Pool;
   embedder: Embedder;
   logger?: Logger;
   /** Re-embed everything, ignoring stored hashes. */
   force?: boolean;
+}
+
+/**
+ * Thrown instead of pruning when the source yields nothing but the index is
+ * populated.
+ *
+ * "Zero files" almost never means "the repository is empty"; it means the
+ * source could not be read - a missing checkout, a failed API call, a bad
+ * token. Treating those files as deleted wipes the index, and the run still
+ * reports success. That happened: the orchestrator moved into the cluster,
+ * scanned zero files, and every push emptied the index until retrieval had
+ * only the diff left.
+ */
+export class EmptySourceError extends Error {
+  constructor(
+    readonly repo: string,
+    readonly indexedFiles: number,
+    readonly sourceKind: string,
+  ) {
+    super(
+      `refusing to index ${repo}: the ${sourceKind} source listed 0 files while ${indexedFiles} are indexed. ` +
+        "This is treated as an unreadable source, not an empty repository, so nothing was deleted.",
+    );
+    this.name = "EmptySourceError";
+  }
 }
 
 function sha256(content: string): string {
@@ -41,16 +72,23 @@ function sha256(content: string): string {
  */
 export async function indexRepo(opts: IndexOptions): Promise<IndexStats> {
   const { repo, repoRoot, pool, embedder, logger, force = false } = opts;
+  const source = opts.source ?? localSource(repoRoot);
   const started = performance.now();
 
-  const project = openProject(repoRoot);
-  const { edges, files } = buildImportGraph(repoRoot, project);
+  const loaded = await loadRepo(source, repoRoot);
+  const { edges, files } = buildImportGraph(loaded.root, loaded.project);
 
   const { rows: existingRows } = await pool.query<{ path: string; content_hash: string }>(
     "SELECT path, content_hash FROM repo_files WHERE repo = $1",
     [repo],
   );
   const existing = new Map(existingRows.map((r) => [r.path, r.content_hash]));
+
+  // Before any write. The guard has to run against the DB state, because
+  // "0 files scanned" is only alarming when something is already indexed.
+  if (files.length === 0 && existing.size > 0) {
+    throw new EmptySourceError(repo, existing.size, source.kind);
+  }
 
   interface Pending {
     path: string;
@@ -63,7 +101,8 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexStats> {
   let unchanged = 0;
 
   for (const path of files) {
-    const content = await readFile(join(repoRoot, path), "utf8");
+    const content = loaded.contents.get(path);
+    if (content === undefined) continue;
     const hash = sha256(content);
 
     if (!force && existing.get(path) === hash) {
@@ -71,7 +110,7 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexStats> {
       continue;
     }
 
-    const sourceFile = project.getSourceFile(join(repoRoot, path));
+    const sourceFile = loaded.sourceFiles.get(path);
     if (!sourceFile) continue;
 
     pending.push({ path, hash, size: content.length, chunks: chunkFile(sourceFile) });

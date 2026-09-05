@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,7 @@ import {
   createClient,
   fetchFile,
   fetchPullRequest,
+  githubRepoFiles,
   parseRepo,
   postReview,
 } from "@srectl/github";
@@ -16,7 +18,9 @@ import {
   createPool,
   detectTestLayout,
   Embedder,
+  functionSource,
   indexRepo,
+  localSource,
   readConventions,
 } from "@srectl/retrieval";
 import type pg from "pg";
@@ -28,7 +32,11 @@ export interface HandlerContext {
   apiKey: string;
   githubToken: string;
   targetRepo: string;
-  /** Local checkout used for indexing. Phase 6 replaces this with a clone. */
+  /**
+   * Local checkout, used for indexing when one is present. In the cluster
+   * there is none, and indexing reads the repository through the GitHub API
+   * instead - see reindex().
+   */
   repoRoot: string;
   /** Posting is opt-in so a misconfigured worker cannot spam a repository. */
   post: boolean;
@@ -201,9 +209,32 @@ async function reviewPullRequest(job: Job, ctx: HandlerContext): Promise<Handler
  * re-embeds one file.
  */
 async function reindex(job: Job, ctx: HandlerContext): Promise<HandlerResult> {
+  /**
+   * A checkout is used when one exists, and the GitHub API otherwise.
+   *
+   * The orchestrator runs in a container with no checkout, so this used to
+   * scan zero files - and zero scanned files meant "everything was deleted",
+   * which emptied the index on every push while reporting success.
+   */
+  const hasCheckout = existsSync(join(ctx.repoRoot, "package.json"));
+  let source;
+
+  if (hasCheckout) {
+    source = localSource(ctx.repoRoot);
+  } else {
+    const ref = parseRepo(job.repo);
+    const gh = createClient(ctx.githubToken);
+    // The pushed commit when we have it, so the index matches the event that
+    // triggered it rather than whatever the branch has moved to since.
+    const sha = job.headSha ?? (await fetchDefaultBranchSha(gh, ref));
+    source = functionSource(githubRepoFiles(gh, ref, sha));
+    ctx.logger.info("indexing from the GitHub API", { repo: job.repo, sha: sha.slice(0, 7) });
+  }
+
   const stats = await indexRepo({
     repo: job.repo,
     repoRoot: ctx.repoRoot,
+    source,
     pool: ctx.pool,
     embedder: new Embedder(ctx.apiKey),
     logger: ctx.logger,
@@ -211,8 +242,17 @@ async function reindex(job: Job, ctx: HandlerContext): Promise<HandlerResult> {
 
   return {
     ok: true,
-    summary: `indexed ${stats.filesChanged}/${stats.filesScanned} changed, ${stats.chunksWritten} chunks, ${stats.embedRequests} embed request(s)`,
+    summary: `indexed ${stats.filesChanged}/${stats.filesScanned} changed, ${stats.chunksWritten} chunks, ${stats.importEdges} edges, ${stats.embedRequests} embed request(s) via ${source.kind}`,
   };
+}
+
+async function fetchDefaultBranchSha(
+  gh: ReturnType<typeof createClient>,
+  ref: ReturnType<typeof parseRepo>,
+): Promise<string> {
+  const { data } = await gh.rest.repos.get({ ...ref });
+  const { data: branch } = await gh.rest.repos.getBranch({ ...ref, branch: data.default_branch });
+  return branch.commit.sha;
 }
 
 /** Kept so the orchestrator can run without a checkout in Phase 6. */

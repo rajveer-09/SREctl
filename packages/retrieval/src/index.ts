@@ -2,6 +2,7 @@ export * from "./db.js";
 export * from "./embed.js";
 export * from "./chunker.js";
 export * from "./import-graph.js";
+export * from "./source.js";
 export * from "./indexer.js";
 export * from "./conventions.js";
 export * from "./search.js";
